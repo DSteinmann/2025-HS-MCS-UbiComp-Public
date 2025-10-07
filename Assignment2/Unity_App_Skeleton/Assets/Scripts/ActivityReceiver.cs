@@ -1,75 +1,67 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Video;
 
 public class ActivityReceiver : MonoBehaviour
 {
-
+    [Header("UI References")]
     public GameObject ActivityNotifyContainer;
     public GameObject ActivityText;
     public GameObject SuggestionText;
     public TextMeshProUGUI DebugText;
     public ScrollRect DebugScrollRect;
+    
+    [Header("Functionality")]
+    public GameObject videoPlayer; // Drag your VideoPlayerScreen here
+    public NoteTaker noteTaker;
 
-
+    [Header("System")]
     public HTTPListener HTTPListener;
+    public GameObject DebugLogContainer;
 
+    // Internal state
     public string tmpActivity = "";
     public float tmpProbability = 0f;
     public bool newActivityArrived = false;
 
-
-    public GameObject DebugLogContainer;
+    void Start()
+    {
+        if (videoPlayer != null)
+        {
+            videoPlayer.SetActive(false); // Ensure video player is off at the start
+        }
+        if (noteTaker == null)
+        {
+            Debug.LogError("NoteTaker reference is not set in ActivityReceiver!");
+        }
+        HideDebugLogContainer();
+        Debug.Log("start activity receiver");
+    }
 
     public void ShowDebugLogContainer()
     {
         DebugLogContainer.SetActive(true);
     }
 
-    public void HideDebugLogContainer ()
+    public void HideDebugLogContainer()
     {
         DebugLogContainer.SetActive(false);
     }
 
-
-    // Start is called before the first frame update
-    void Start()
-    {
-        Debug.Log("start activity receiver");
-        Debug.Log($"tmpActivity: {tmpActivity}, tmpProbability: {tmpProbability}");
-        Debug.Log($"this ActivityReceiver is {this}");
-    }
-
-    // Update is called once per frame
     void Update()
     {
         if (HTTPListener.httpNewActivityArrived)
         {
-            Debug.Log($"HTTPListener.\ntmpActivity: {HTTPListener.httpTmpActivity}, tmpProbability: { HTTPListener.httpTmpProbability}");
             ReceiveNewActivity(HTTPListener.httpTmpActivity, HTTPListener.httpTmpProbability);
-            Debug.Log($"new activity in update loop. newActivityArrived: {HTTPListener.httpNewActivityArrived}");
             HTTPListener.httpNewActivityArrived = false;
             HTTPListener.httpTmpActivity = "";
             HTTPListener.httpTmpProbability = 0f;
         }
-
-
-        if (newActivityArrived)
-        {
-            Debug.Log($"tmpActivity: {tmpActivity}, tmpProbability: {tmpProbability}");
-            ReceiveNewActivity(tmpActivity, tmpProbability);
-            Debug.Log($"new activity in update loop. newActivityArrived: {newActivityArrived}");
-            newActivityArrived = false;
-            tmpActivity = "";
-            tmpProbability = 0f;
-        } 
-        
     }
-
 
     private void ReceiveNewActivity(string activity, float probability)
     {
@@ -80,23 +72,36 @@ public class ActivityReceiver : MonoBehaviour
         ActivityText.GetComponent<TextMeshPro>().text = $"{activity} ({probPercent}).";
         var suggestion = "";
 
+        // --- Deactivate all special features by default ---
+        if (videoPlayer != null && videoPlayer.activeSelf)
+        {
+            videoPlayer.SetActive(false);
+            videoPlayer.GetComponent<VideoPlayer>().Stop();
+        }
+        // ---
+
         switch (activity)
-        { 
+        {
             case "Reading":
-                suggestion = "Should I translate this text for you?";
+                suggestion = "Let's watch a video!";
+                if (videoPlayer != null)
+                {
+                    videoPlayer.SetActive(true);
+                    videoPlayer.GetComponent<VideoPlayer>().Play();
+                }
                 break;
             case "Inspection":
-                suggestion = "Should I open additional product information for you?";
+                suggestion = "You can now take notes. Say 'take a note' to begin.";
+                Debug.Log("ActivityReceiver: 'Inspection' case reached.");
+                // noteTaker is now always listening for the keyword.
                 break;
             case "Search":
-                suggestion = "Should I open a semantic hypermedia search engine for you?";
+                suggestion = "Searching for something? Say 'find my...' followed by an item name.";
                 break;
             default:
+                // No specific suggestion, ensure video is stopped.
                 break;
         }
-
-        SuggestionText.GetComponent<TextMeshPro>().text = $"{suggestion}";
-        ActivityNotifyContainer.SetActive(true);
-       
+        SuggestionText.GetComponent<TextMeshPro>().text = suggestion;
     }
 }

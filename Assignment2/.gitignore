@@ -1,0 +1,30 @@
+# Unity project files
+/Unity_App_Skeleton/[Ll]ibrary/
+/Unity_App_Skeleton/[Tt]emp/
+/Unity_App_Skeleton/[Oo]bj/
+/Unity_App_Skeleton/[Bb]uild/
+/Unity_App_Skeleton/[Bb]uilds/
+/Unity_App_Skeleton/[Ll]ogs/
+/Unity_App_Skeleton/[Uu]ser[Ss]ettings/
+/Unity_App_Skeleton/[Mm]emoryCaptures/
+/Unity_App_Skeleton/App/
+
+# Visual Studio / Rider generated files
+*.sln
+*.csproj
+*.unityproj
+*.user
+*.userprefs
+/Unity_App_Skeleton/.vs/
+
+# Build output
+/Unity_App_Skeleton/*.apk
+/Unity_App_Skeleton/*.aab
+/Unity_App_Skeleton/*.app
+/Unity_App_Skeleton/*.exe
+/Unity_App_Skeleton/*.ipa
+/Unity_App_Skeleton/*.unitypackage
+
+# Other
+.DS_Store
+Thumbs.db

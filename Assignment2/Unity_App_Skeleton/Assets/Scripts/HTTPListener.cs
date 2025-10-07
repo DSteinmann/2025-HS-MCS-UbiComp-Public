@@ -35,7 +35,7 @@ public class HTTPListener : MonoBehaviour
 
 		var thisIP = GetIP4Address();
 		var thisPort = GetRandomUnusedPort();
-		var ipAndPort = $"http://{thisIP}:{thisPort}/";
+		var ipAndPort = $"http://{thisIP}:{56689}/";
 		HL2IPText.GetComponent<TextMeshPro>().text = ipAndPort;
 		
 		listener.Prefixes.Add(ipAndPort); 
