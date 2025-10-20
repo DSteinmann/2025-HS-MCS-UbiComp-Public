@@ -66,7 +66,7 @@ public class ActivityReceiver : MonoBehaviour
     [Tooltip("Automatically keep the primary overlays spaced out in front of the user.")]
     public bool autoArrangeOverlays = true;
     [Tooltip("Distance in meters from the user for the overlay root.")]
-    public float overlayDistance = 1.4f;
+    public float overlayDistance = 0.45f;
     [Tooltip("Horizontal (x) and vertical (y) offsets for the activity summary panel.")]
     public Vector2 activityPanelOffset = new Vector2(0f, 0.2f);
     [Tooltip("Horizontal (x) and vertical (y) offsets for the inspection checklist panel.")]
@@ -88,6 +88,10 @@ public class ActivityReceiver : MonoBehaviour
     private bool solidAuthenticated = false;
     private string gazeDataCsv = "";
     private bool cameraWarningLogged = false;
+
+    // Text orientation cache
+    private bool textRotationsCached = false;
+    private readonly Dictionary<Transform, Quaternion> textInitialLocalRotations = new Dictionary<Transform, Quaternion>();
 
     // Pomodoro Timer state
     private float pomodoroTimer = 0f;
@@ -146,6 +150,8 @@ public class ActivityReceiver : MonoBehaviour
 
         // Arrange overlays for first frame
         ArrangeOverlays();
+        CacheTextOrientations();
+        RestoreTextOrientations();
     }
 
     private void InitializeSharingInterface()
@@ -200,7 +206,7 @@ public class ActivityReceiver : MonoBehaviour
         flattenedForward.Normalize();
 
         Vector3 basePosition = cam.transform.position + flattenedForward * overlayDistance;
-        Quaternion lookRotation = Quaternion.LookRotation(basePosition - cam.transform.position, Vector3.up);
+    Quaternion lookRotation = Quaternion.LookRotation(basePosition - cam.transform.position, Vector3.up);
 
         PositionOverlay(ActivityNotifyContainer, activityPanelOffset, cam, basePosition, lookRotation);
         PositionOverlay(ChecklistPanel, checklistPanelOffset, cam, basePosition, lookRotation);
@@ -210,6 +216,8 @@ public class ActivityReceiver : MonoBehaviour
         {
             PositionOverlay(SharePanel, sharePanelOffset, cam, basePosition, lookRotation);
         }
+
+        RestoreTextOrientations();
     }
 
     private void PositionOverlay(GameObject target, Vector2 offset, Camera cam, Vector3 basePosition, Quaternion lookRotation)
@@ -543,7 +551,7 @@ public class ActivityReceiver : MonoBehaviour
         foreach (Contact contact in contacts)
         {
             GameObject contactButton = UnityEngine.Object.Instantiate(ContactButtonPrefab, ContactListContent.transform);
-            contactButton.GetComponentInChildren<TextMeshProUGUI>().text = contact.Name;
+            SetButtonLabel(contactButton, contact.Name);
 
             // Add click handler
             contactButton.GetComponent<UnityEngine.UI.Button>().onClick.AddListener(() =>
@@ -569,11 +577,43 @@ public class ActivityReceiver : MonoBehaviour
 
         // Create manual input option
         GameObject manualButton = UnityEngine.Object.Instantiate(ContactButtonPrefab, ContactListContent.transform);
-        manualButton.GetComponentInChildren<TextMeshProUGUI>().text = "Enter WebID Manually";
+        SetButtonLabel(manualButton, "Enter WebID Manually");
         manualButton.GetComponent<UnityEngine.UI.Button>().onClick.AddListener(() =>
         {
             ShowManualInput();
         });
+    }
+
+    private void SetButtonLabel(GameObject button, string label)
+    {
+        if (button == null)
+        {
+            Debug.LogWarning("SetButtonLabel called with null button reference.");
+            return;
+        }
+
+        var tmpUGUI = button.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (tmpUGUI != null)
+        {
+            tmpUGUI.text = label;
+            return;
+        }
+
+        var tmp = button.GetComponentInChildren<TextMeshPro>(true);
+        if (tmp != null)
+        {
+            tmp.text = label;
+            return;
+        }
+
+        var legacyText = button.GetComponentInChildren<UnityEngine.UI.Text>(true);
+        if (legacyText != null)
+        {
+            legacyText.text = label;
+            return;
+        }
+
+        Debug.LogWarning("ContactButtonPrefab is missing a text component. Please add TextMeshProUGUI or TextMeshPro.");
     }
 
     private void SelectContact(Contact contact)
@@ -977,6 +1017,8 @@ public class ActivityReceiver : MonoBehaviour
         {
             ArrangeOverlays();
         }
+
+        RestoreTextOrientations();
     }
 
     void Update()
@@ -1009,12 +1051,32 @@ public class ActivityReceiver : MonoBehaviour
         Debug.Log($"Displaying new activity: {activity}");
         DebugText.text += $"\n[{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")}]";
         DebugText.text += $"\nDisplaying new activity: {activity}";
-        var probPercent = probability.ToString("P", CultureInfo.InvariantCulture);
+        string probPercent = probability.ToString("P", CultureInfo.InvariantCulture);
         ActivityText.GetComponent<TextMeshPro>().text = $"{activity} ({probPercent}).";
-        var suggestion = "";
+        string suggestion = "";
 
         // --- Deactivate all special features by default ---
-        // ---
+        if (SearchMarkers != null)
+        {
+            foreach (GameObject marker in SearchMarkers)
+            {
+                if (marker != null)
+                {
+                    marker.SetActive(false);
+                }
+            }
+        }
+        isSearchingActivity = false;
+        isInspectionActivity = false;
+        isReadingActivity = false;
+        if (CountdownText != null)
+        {
+            CountdownText.SetActive(false);
+        }
+        if (ChecklistPanel != null)
+        {
+            ChecklistPanel.SetActive(false);
+        }
 
         switch (activity)
         {
@@ -1033,31 +1095,12 @@ public class ActivityReceiver : MonoBehaviour
                 {
                     Debug.LogWarning("CountdownText is not assigned in ActivityReceiver!");
                 }
-                // Hide checklist if showing
-                if (ChecklistPanel != null)
-                {
-                    ChecklistPanel.SetActive(false);
-                }
-                isInspectionActivity = false;
-                // Hide search markers
-                if (SearchMarkers != null)
-                {
-                    foreach (GameObject marker in SearchMarkers)
-                    {
-                        if (marker != null)
-                        {
-                            marker.SetActive(false);
-                        }
-                    }
-                }
-                isSearchingActivity = false;
                 break;
             case "Inspection":
                 suggestion = "Inspection checklist activated. Say 'Check' or tap to mark items complete.";
                 // Start Inspection Checklist
                 isInspectionActivity = true;
                 currentChecklistIndex = 0;
-                // Reset checklist completion
                 for (int i = 0; i < checklistCompleted.Length; i++)
                 {
                     checklistCompleted[i] = false;
@@ -1072,28 +1115,9 @@ public class ActivityReceiver : MonoBehaviour
                 {
                     Debug.LogWarning("ChecklistPanel is not assigned in ActivityReceiver!");
                 }
-                // Hide countdown
-                if (CountdownText != null)
-                {
-                    CountdownText.SetActive(false);
-                }
-                isReadingActivity = false;
-                // Hide search markers
-                if (SearchMarkers != null)
-                {
-                    foreach (GameObject marker in SearchMarkers)
-                    {
-                        if (marker != null)
-                        {
-                            marker.SetActive(false);
-                        }
-                    }
-                }
-                isSearchingActivity = false;
                 break;
             case "Search":
                 suggestion = "Let's search this area systematically. First, search the area around marker 1.";
-                // Start Search Activity
                 isSearchingActivity = true;
                 currentSearchMarker = 0;
                 ActivateSearchMarkers();
@@ -1105,58 +1129,84 @@ public class ActivityReceiver : MonoBehaviour
                 {
                     Debug.Log("Search markers activated");
                 }
-                // Hide other UI elements
-                if (CountdownText != null)
-                {
-                    CountdownText.SetActive(false);
-                }
-                if (ChecklistPanel != null)
-                {
-                    ChecklistPanel.SetActive(false);
-                }
-                isReadingActivity = false;
-                isInspectionActivity = false;
                 break;
             default:
-                // No specific suggestion, ensure video is stopped.
-                // Reset timer
-                isReadingActivity = false;
-                if (CountdownText != null)
-                {
-                    CountdownText.SetActive(false);
-                }
-                // Hide checklist
-                if (ChecklistPanel != null)
-                {
-                    ChecklistPanel.SetActive(false);
-                }
-                isInspectionActivity = false;
-                // Hide search markers
-                if (SearchMarkers != null)
-                {
-                    foreach (GameObject marker in SearchMarkers)
-                    {
-                        if (marker != null)
-                        {
-                            marker.SetActive(false);
-                        }
-                    }
-                }
-                isSearchingActivity = false;
+                // No specific suggestion beyond default view
                 break;
         }
+
         SuggestionText.GetComponent<TextMeshPro>().text = suggestion;
 
-        // Save activity data to Solid pod
         await SaveCurrentActivity(activity, probability);
 
-        // Save gaze data if available (assuming gazeDataCsv is populated elsewhere)
         if (!string.IsNullOrEmpty(gazeDataCsv))
         {
             await SaveGazeData(gazeDataCsv);
         }
     }
 
+    private void CacheTextOrientations()
+    {
+        if (textRotationsCached)
+        {
+            return;
+        }
+
+        CacheTextRotationsFromRoot(ActivityNotifyContainer);
+        CacheTextRotationsFromRoot(ActivityText);
+        CacheTextRotationsFromRoot(SuggestionText);
+        CacheTextRotationsFromRoot(PersonNameText);
+        CacheTextRotationsFromRoot(ActivityProbabilityText);
+        CacheTextRotationsFromRoot(ActivityEndTimeText);
+        CacheTextRotationsFromRoot(CountdownText);
+        CacheTextRotationsFromRoot(ChecklistPanel);
+        CacheTextRotationsFromRoot(SharePanel);
+        CacheTextRotationsFromRoot(DebugLogContainer);
+
+        if (SearchMarkers != null)
+        {
+            foreach (GameObject marker in SearchMarkers)
+            {
+                CacheTextRotationsFromRoot(marker);
+            }
+        }
+
+        textRotationsCached = true;
+    }
+
+    private void RestoreTextOrientations()
+    {
+        if (!textRotationsCached)
+        {
+            CacheTextOrientations();
+        }
+
+        foreach (KeyValuePair<Transform, Quaternion> kvp in textInitialLocalRotations)
+        {
+            if (kvp.Key != null)
+            {
+                kvp.Key.localRotation = kvp.Value;
+            }
+        }
+    }
+
+    private void CacheTextRotationsFromRoot(GameObject root)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        foreach (TextMeshProUGUI tmp in root.GetComponentsInChildren<TextMeshProUGUI>(true))
+        {
+            textInitialLocalRotations[tmp.transform] = tmp.transform.localRotation;
+        }
+
+        foreach (TextMeshPro tmp in root.GetComponentsInChildren<TextMeshPro>(true))
+        {
+            textInitialLocalRotations[tmp.transform] = tmp.transform.localRotation;
+        }
+    }
     // Test method to verify sharing functionality
     public async void TestSharing()
     {
